@@ -363,7 +363,7 @@ speaker:
   extraContainers: []
 
 crds:
-  enabled: true
+  enabled: false
   validationFailurePolicy: Fail
 
 # frrk8s contains the configuration related to using an frrk8s instance
