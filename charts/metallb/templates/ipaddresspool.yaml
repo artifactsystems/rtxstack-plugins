@@ -1,0 +1,25 @@
+{{- range .Values.ipAddressPools }}
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "metallb.labels" $ | nindent 4 }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  addresses:
+  {{- range .addresses }}
+    - {{ . }}
+  {{- end }}
+  {{- with .autoAssign }}
+  autoAssign: {{ . }}
+  {{- end }}
+  {{- with .avoidBuggyIPs }}
+  avoidBuggyIPs: {{ . }}
+  {{- end }}
+{{- end }}
