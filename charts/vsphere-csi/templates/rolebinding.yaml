@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vsphere-csi-node-binding
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: vsphere-csi-node
+    namespace: {{ include "vsphere-csi.namespace" . }}
+roleRef:
+  kind: Role
+  name: vsphere-csi-node-role
+  apiGroup: rbac.authorization.k8s.io

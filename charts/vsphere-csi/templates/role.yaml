@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vsphere-csi-node-role
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]

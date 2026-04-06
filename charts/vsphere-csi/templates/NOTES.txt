@@ -1,0 +1,14 @@
+Thank you for installing {{ .Chart.Name }} (v{{ .Chart.AppVersion }}).
+
+The vSphere CSI Driver has been deployed to namespace: {{ include "vsphere-csi.namespace" . }}
+
+Components deployed:
+  - CSIDriver: {{ .Values.csiDriver.name }}
+  - Controller Deployment ({{ .Values.controller.replicas }} replica(s))
+  - Node DaemonSet (Linux): {{ if .Values.node.enabled }}enabled{{ else }}disabled{{ end }}
+  - Node DaemonSet (Windows): {{ if .Values.nodeWindows.enabled }}enabled{{ else }}disabled{{ end }}
+
+IMPORTANT: Make sure you have created the vSphere config secret before deploying:
+  kubectl create secret generic {{ .Values.controller.vSphereConfigSecret }} \
+    --from-file=csi-vsphere.conf \
+    -n {{ include "vsphere-csi.namespace" . }}

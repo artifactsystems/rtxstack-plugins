@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vsphere-csi-controller
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: vsphere-csi-controller
+  template:
+    metadata:
+      labels:
+        app: vsphere-csi-controller
+        role: vsphere-csi
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: "app"
+                    operator: In
+                    values:
+                      - vsphere-csi-controller
+              topologyKey: "kubernetes.io/hostname"
+      serviceAccountName: vsphere-csi-controller
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      dnsPolicy: {{ .Values.controller.dnsPolicy | quote }}
+      containers:
+        - name: csi-attacher
+          image: "{{ .Values.controller.sidecars.attacher.image.repository }}:{{ .Values.controller.sidecars.attacher.image.tag }}"
+          args:
+            - "--v=4"
+            - "--timeout={{ .Values.controller.sidecars.attacher.timeout }}"
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election"
+            - "--kube-api-qps={{ .Values.controller.sidecars.attacher.kubeApiQPS }}"
+            - "--kube-api-burst={{ .Values.controller.sidecars.attacher.kubeApiBurst }}"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+        - name: csi-resizer
+          image: "{{ .Values.controller.sidecars.resizer.image.repository }}:{{ .Values.controller.sidecars.resizer.image.tag }}"
+          args:
+            - "--v=4"
+            - "--timeout={{ .Values.controller.sidecars.resizer.timeout }}"
+            - "--handle-volume-inuse-error=false"
+            - "--csi-address=$(ADDRESS)"
+            - "--kube-api-qps={{ .Values.controller.sidecars.resizer.kubeApiQPS }}"
+            - "--kube-api-burst={{ .Values.controller.sidecars.resizer.kubeApiBurst }}"
+            - "--leader-election"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+        - name: vsphere-csi-controller
+          image: "{{ .Values.controller.driver.image.repository }}:{{ .Values.controller.driver.image.tag }}"
+          args:
+            - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
+            - "--fss-namespace=$(CSI_NAMESPACE)"
+          imagePullPolicy: {{ .Values.controller.driver.image.pullPolicy | quote }}
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: X_CSI_MODE
+              value: "controller"
+            - name: X_CSI_SPEC_DISABLE_LEN_CHECK
+              value: "true"
+            - name: X_CSI_SERIAL_VOL_ACCESS_TIMEOUT
+              value: {{ .Values.controller.driver.serialVolAccessTimeout | quote }}
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/cloud/csi-vsphere.conf"
+            - name: LOGGER_LEVEL
+              value: {{ .Values.controller.driver.loggerLevel | quote }}
+            - name: INCLUSTER_CLIENT_QPS
+              value: {{ .Values.controller.driver.inclusterClientQPS | quote }}
+            - name: INCLUSTER_CLIENT_BURST
+              value: {{ .Values.controller.driver.inclusterClientBurst | quote }}
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/cloud
+              name: vsphere-config-volume
+              readOnly: true
+            - mountPath: /csi
+              name: socket-dir
+          ports:
+            - name: healthz
+              containerPort: 9808
+              protocol: TCP
+            - name: prometheus
+              containerPort: 2112
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+        - name: liveness-probe
+          image: "{{ .Values.controller.sidecars.livenessProbe.image.repository }}:{{ .Values.controller.sidecars.livenessProbe.image.tag }}"
+          args:
+            - "--v=4"
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: vsphere-syncer
+          image: "{{ .Values.controller.syncer.image.repository }}:{{ .Values.controller.syncer.image.tag }}"
+          args:
+            - "--leader-election"
+            - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
+            - "--fss-namespace=$(CSI_NAMESPACE)"
+          imagePullPolicy: {{ .Values.controller.syncer.image.pullPolicy | quote }}
+          ports:
+            - containerPort: 2113
+              name: prometheus
+              protocol: TCP
+          env:
+            - name: FULL_SYNC_INTERVAL_MINUTES
+              value: {{ .Values.controller.syncer.fullSyncIntervalMinutes | quote }}
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/cloud/csi-vsphere.conf"
+            - name: LOGGER_LEVEL
+              value: {{ .Values.controller.syncer.loggerLevel | quote }}
+            - name: INCLUSTER_CLIENT_QPS
+              value: {{ .Values.controller.syncer.inclusterClientQPS | quote }}
+            - name: INCLUSTER_CLIENT_BURST
+              value: {{ .Values.controller.syncer.inclusterClientBurst | quote }}
+            - name: GODEBUG
+              value: x509sha1=1
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/cloud
+              name: vsphere-config-volume
+              readOnly: true
+        - name: csi-provisioner
+          image: "{{ .Values.controller.sidecars.provisioner.image.repository }}:{{ .Values.controller.sidecars.provisioner.image.tag }}"
+          args:
+            - "--v=4"
+            - "--timeout={{ .Values.controller.sidecars.provisioner.timeout }}"
+            - "--csi-address=$(ADDRESS)"
+            - "--kube-api-qps={{ .Values.controller.sidecars.provisioner.kubeApiQPS }}"
+            - "--kube-api-burst={{ .Values.controller.sidecars.provisioner.kubeApiBurst }}"
+            - "--leader-election"
+            - "--default-fstype={{ .Values.controller.sidecars.provisioner.defaultFstype }}"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+        - name: csi-snapshotter
+          image: "{{ .Values.controller.sidecars.snapshotter.image.repository }}:{{ .Values.controller.sidecars.snapshotter.image.tag }}"
+          args:
+            - "--v=4"
+            - "--kube-api-qps={{ .Values.controller.sidecars.snapshotter.kubeApiQPS }}"
+            - "--kube-api-burst={{ .Values.controller.sidecars.snapshotter.kubeApiBurst }}"
+            - "--timeout={{ .Values.controller.sidecars.snapshotter.timeout }}"
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+      volumes:
+        - name: vsphere-config-volume
+          secret:
+            secretName: {{ .Values.controller.vSphereConfigSecret }}
+        - name: socket-dir
+          emptyDir: {}

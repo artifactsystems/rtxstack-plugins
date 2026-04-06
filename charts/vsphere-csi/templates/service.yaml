@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vsphere-csi-controller
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    app: vsphere-csi-controller
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: ctlr
+      port: {{ .Values.controller.service.ports.ctlr.port }}
+      targetPort: {{ .Values.controller.service.ports.ctlr.targetPort }}
+      protocol: TCP
+    - name: syncer
+      port: {{ .Values.controller.service.ports.syncer.port }}
+      targetPort: {{ .Values.controller.service.ports.syncer.targetPort }}
+      protocol: TCP
+  selector:
+    app: vsphere-csi-controller

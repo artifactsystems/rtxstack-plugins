@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vsphere-csi-controller-binding
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: vsphere-csi-controller
+    namespace: {{ include "vsphere-csi.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: vsphere-csi-controller-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vsphere-csi-node-cluster-role-binding
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: vsphere-csi-node
+    namespace: {{ include "vsphere-csi.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: vsphere-csi-node-cluster-role
+  apiGroup: rbac.authorization.k8s.io
