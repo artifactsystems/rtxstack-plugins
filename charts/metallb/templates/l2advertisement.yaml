@@ -7,10 +7,12 @@ metadata:
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "metallb.labels" $ | nindent 4 }}
-  {{- with .annotations }}
   annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+    {{- with .annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   {{- with .ipAddressPools }}
   ipAddressPools:
