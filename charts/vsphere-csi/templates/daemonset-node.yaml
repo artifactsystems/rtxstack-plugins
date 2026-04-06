@@ -1,0 +1,150 @@
+{{- if .Values.node.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vsphere-csi-node
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: vsphere-csi-node
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: vsphere-csi-node
+        role: vsphere-csi
+    spec:
+      {{- with .Values.node.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: vsphere-csi-node
+      hostNetwork: {{ .Values.node.hostNetwork }}
+      dnsPolicy: {{ .Values.node.dnsPolicy | quote }}
+      containers:
+        - name: node-driver-registrar
+          image: "{{ .Values.node.sidecars.registrar.image.repository }}:{{ .Values.node.sidecars.registrar.image.tag }}"
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/csi.vsphere.vmware.com/csi.sock
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          livenessProbe:
+            exec:
+              command:
+                - /csi-node-driver-registrar
+                - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.vsphere.vmware.com/csi.sock
+                - --mode=kubelet-registration-probe
+            initialDelaySeconds: 3
+        - name: vsphere-csi-node
+          image: "{{ .Values.node.driver.image.repository }}:{{ .Values.node.driver.image.tag }}"
+          args:
+            - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
+            - "--fss-namespace=$(CSI_NAMESPACE)"
+          imagePullPolicy: {{ .Values.node.driver.image.pullPolicy | quote }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: MAX_VOLUMES_PER_NODE
+              value: {{ .Values.node.maxVolumesPerNode | quote }}
+            - name: X_CSI_MODE
+              value: "node"
+            - name: X_CSI_SPEC_REQ_VALIDATION
+              value: "false"
+            - name: X_CSI_SPEC_DISABLE_LEN_CHECK
+              value: "true"
+            - name: LOGGER_LEVEL
+              value: {{ .Values.node.driver.loggerLevel | quote }}
+            - name: GODEBUG
+              value: x509sha1=1
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODEGETINFO_WATCH_TIMEOUT_MINUTES
+              value: {{ .Values.node.driver.nodegetinfoWatchTimeoutMinutes | quote }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: "Bidirectional"
+            - name: device-dir
+              mountPath: /dev
+            - name: blocks-dir
+              mountPath: /sys/block
+            - name: sys-devices-dir
+              mountPath: /sys/devices
+          ports:
+            - name: healthz
+              containerPort: 9808
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+        - name: liveness-probe
+          image: "{{ .Values.node.sidecars.livenessProbe.image.repository }}:{{ .Values.node.sidecars.livenessProbe.image.tag }}"
+          args:
+            - "--v=4"
+            - "--csi-address=/csi/csi.sock"
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.vsphere.vmware.com
+            type: DirectoryOrCreate
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
+        - name: blocks-dir
+          hostPath:
+            path: /sys/block
+            type: Directory
+        - name: sys-devices-dir
+          hostPath:
+            path: /sys/devices
+            type: Directory
+      {{- with .Values.node.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

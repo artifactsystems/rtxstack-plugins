@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: internal-feature-states.csi.vsphere.vmware.com
+  namespace: {{ include "vsphere-csi.namespace" . }}
+  labels:
+    {{- include "vsphere-csi.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.featureStates }}
+  {{ $key | quote }}: {{ $value | quote }}
+  {{- end }}

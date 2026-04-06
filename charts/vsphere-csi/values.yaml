@@ -1,0 +1,203 @@
+# Default values for vsphere-csi.
+
+# -- Namespace to deploy into (should match Release namespace)
+namespace: vmware-system-csi
+
+# -- vSphere connection configuration (generates the vsphere-config-secret automatically)
+vSphereConfig:
+  global:
+    clusterID: "my-cluster"
+    clusterDistribution: "my-cluster"
+  vcenter:
+    server: "vcenter.example.com"
+    insecureFlag: "true"
+    user: "administrator@vsphere.local"
+    password: "your-password"
+    port: "443"
+    datacenters: "your-datacenter"
+
+# -- StorageClass settings
+storageClass:
+  enabled: false
+  name: vsphere-csi-sc
+  isDefault: true
+  allowVolumeExpansion: true
+  reclaimPolicy: Delete
+  volumeBindingMode: ""
+  parameters:
+    datastoreurl: "ds:///vmfs/volumes/storage-id/"
+
+# -- CSI Driver settings
+csiDriver:
+  name: csi.vsphere.vmware.com
+  attachRequired: true
+  podInfoOnMount: false
+
+# -- Controller Deployment settings
+controller:
+  replicas: 1
+  nodeSelector: {}
+  #  node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/etcd
+      operator: Exists
+      effect: NoExecute
+  dnsPolicy: "Default"
+
+  # -- vSphere CSI controller container
+  driver:
+    image:
+      repository: rancher/mirrored-cloud-provider-vsphere-csi-release-driver
+      tag: v2.7.0
+      pullPolicy: Always
+    loggerLevel: "PRODUCTION"
+    inclusterClientQPS: "100"
+    inclusterClientBurst: "100"
+    serialVolAccessTimeout: "3m"
+
+  # -- vSphere syncer container
+  syncer:
+    image:
+      repository: rancher/mirrored-cloud-provider-vsphere-csi-release-syncer
+      tag: v2.7.0
+      pullPolicy: Always
+    fullSyncIntervalMinutes: "30"
+    loggerLevel: "PRODUCTION"
+    inclusterClientQPS: "100"
+    inclusterClientBurst: "100"
+
+  # -- CSI sidecar containers
+  sidecars:
+    attacher:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-attacher
+        tag: v3.5.0
+      timeout: "300s"
+      kubeApiQPS: "100"
+      kubeApiBurst: "100"
+    resizer:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-resizer
+        tag: v1.5.0
+      timeout: "300s"
+      kubeApiQPS: "100"
+      kubeApiBurst: "100"
+    provisioner:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-provisioner
+        tag: v3.2.1
+      timeout: "300s"
+      kubeApiQPS: "100"
+      kubeApiBurst: "100"
+      defaultFstype: "ext4"
+    snapshotter:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-snapshotter
+        tag: v6.0.1
+      timeout: "300s"
+      kubeApiQPS: "100"
+      kubeApiBurst: "100"
+    livenessProbe:
+      image:
+        repository: k8s.gcr.io/sig-storage/livenessprobe
+        tag: v2.7.0
+
+  # -- Secret containing vSphere credentials
+  vSphereConfigSecret: vsphere-config-secret
+
+  # -- Service settings
+  service:
+    ports:
+      ctlr:
+        port: 2112
+        targetPort: 2112
+      syncer:
+        port: 2113
+        targetPort: 2113
+
+# -- Node DaemonSet settings (Linux)
+node:
+  enabled: true
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - effect: NoExecute
+      operator: Exists
+    - effect: NoSchedule
+      operator: Exists
+  hostNetwork: true
+  dnsPolicy: "ClusterFirstWithHostNet"
+  maxVolumesPerNode: "59"
+
+  driver:
+    image:
+      repository: rancher/mirrored-cloud-provider-vsphere-csi-release-driver
+      tag: v2.7.0
+      pullPolicy: Always
+    loggerLevel: "PRODUCTION"
+    nodegetinfoWatchTimeoutMinutes: "1"
+
+  sidecars:
+    registrar:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+        tag: v2.5.1
+    livenessProbe:
+      image:
+        repository: k8s.gcr.io/sig-storage/livenessprobe
+        tag: v2.7.0
+
+# -- Node DaemonSet settings (Windows)
+nodeWindows:
+  enabled: false
+  nodeSelector:
+    kubernetes.io/os: windows
+  tolerations:
+    - effect: NoExecute
+      operator: Exists
+    - effect: NoSchedule
+      operator: Exists
+  maxVolumesPerNode: "59"
+
+  driver:
+    image:
+      repository: rancher/mirrored-cloud-provider-vsphere-csi-release-driver
+      tag: v2.7.0
+      pullPolicy: Always
+    loggerLevel: "PRODUCTION"
+    logLevel: "DEBUG"
+    nodegetinfoWatchTimeoutMinutes: "1"
+
+  sidecars:
+    registrar:
+      image:
+        repository: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+        tag: v2.5.1
+    livenessProbe:
+      image:
+        repository: k8s.gcr.io/sig-storage/livenessprobe
+        tag: v2.7.0
+
+# -- Feature states ConfigMap
+featureStates:
+  csi-migration: "true"
+  csi-auth-check: "true"
+  online-volume-extend: "true"
+  trigger-csi-fullsync: "false"
+  async-query-volume: "true"
+  improved-csi-idempotency: "true"
+  improved-volume-topology: "true"
+  block-volume-snapshot: "true"
+  csi-windows-support: "false"
+  use-csinode-id: "true"
+  list-volumes: "false"
+  pv-to-backingdiskobjectid-mapping: "false"
+  cnsmgr-suspend-create-volume: "true"
+  topology-preferential-datastores: "true"
+  max-pvscsi-targets-per-vm: "true"
